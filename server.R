@@ -8,7 +8,7 @@ library(lubridate)
 
 server <- function(input, output) {
   
-  ## create reactive data set from the user input
+  ## create reactive data set from the user input file
   df = eventReactive(input$do,{
     inFile <- input$file1
     if (is.null(inFile))
@@ -17,18 +17,18 @@ server <- function(input, output) {
   })
   
   
-  ## create reactive data set when user clicks transform button
+  ## Create a new reactive data set when user clicks transform button
+  ## This data set will be a cleaned version of the original data set
   cleanData <- eventReactive(input$transform,{
+
+    ## calls function above to get the original data from user
     mu_data <- df()
+
     ## Filter so that the provider name isn't "practice"
     mu_data <- filter(mu_data, mu_data[,2] != "practice")
     
     ## Select only the variables we will need for analysis
-    ## This select statement assumes that some of the columns will be on the form twice
-    mu_data <- select(mu_data, c("Practice Name", "Provider Name", "Provider NPI", 
-                                 "Measure_Id", "Measure Name", "Reporting_start_date_1",
-                                 "Reporting_end_date_1", "Denominator_1",
-                                 "Numerator_1", "Performance_Rate"))
+    mu_data <- select(mu_data, varsForAnalysis)
     
     colnames(mu_data)[1:3] <- c("PracticeName", "ProviderName" ,"ProviderNPI")
     mu_data <- mutate(mu_data, NumDenom= paste(Numerator_1, Denominator_1, sep =","))
@@ -46,8 +46,6 @@ server <- function(input, output) {
     spread_mu$Reporting_start_date_1 <- as.Date(spread_mu$Reporting_start_date_1, format="%m/%d/%y")
     spread_mu$Reporting_end_date_1 <- as.Date(spread_mu$Reporting_end_date_1, format="%m/%d/%y")
     
-    
-    
     ## vector of column names
     oldNames <- colnames(spread_mu)[6:length(colnames(spread_mu))]
     
@@ -57,8 +55,6 @@ server <- function(input, output) {
         separate(oldNames[i], c(paste("Num-",oldNames[i],sep=""), 
                                 paste("Denom-", oldNames[i], sep = "")), ",")
     }
-    
-    
     
     ## Create a new data frame contianing provider name from spread_mu dataframe
     fullData <- as.data.frame(paste("MU", spread_mu$ProviderName, " "))
@@ -85,28 +81,33 @@ server <- function(input, output) {
     changeNames <- mutate(changeNames, cdss=NA)
     colnames(changeNames)[14:15] <- mu_names[14:15]
     
+    ## Attach MU columns 6 - 19 to the data frame
     for(i in 6:19){
       changeNames <- cbind(changeNames, spread_mu[,i])
     }
     colnames(changeNames)[16:29] <- mu_names[16:29]
     
     
+    ## These columns are out of order, add measure 9 before adding
+    ## Response to public health
     changeNames <- cbind(changeNames, spread_mu$`Num-OBJ: 9`)
     changeNames <- cbind(changeNames, spread_mu$`Denom-OBJ: 9`)
     changeNames <- mutate(changeNames, pubHealth=NA)
     colnames(changeNames)[30:32] <- mu_names[30:32]
     
-    
+    ## Add the two parts to measure 8
     for(i in 20:23){
       changeNames <- cbind(changeNames, spread_mu[,i])
     }
     colnames(changeNames)[33:36] <- mu_names[33:36]
+
+    ## store in the object cleanedData
     cleanedData <- changeNames
     })
   
   
   
-  ## This decides what data is displayed in the table
+  ## Render a data table based on whether or not the transform button was clicked
   output$contents <- renderDataTable({
     req(input$file1)
     
